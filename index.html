@@ -11,99 +11,50 @@
   <title>Bug Hunter Tracker</title>
   <link rel="manifest" href="/manifest.json" />
 
-  <!-- Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 
-  <!-- React -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-
-  <!-- Babel for JSX -->
   <script src="https://unpkg.com/@babel/standalone@7.23.2/babel.min.js"></script>
-
-  <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    html, body {
-      height: 100%;
-      background: #08090e;
-      color: #e2e8f0;
-      font-family: 'JetBrains Mono', monospace;
-      /* PC তে max width center করা */
-      display: flex;
-      justify-content: center;
-    }
-
-    #root {
-      width: 100%;
-      max-width: 480px;  /* PC তে phone size এ থাকবে */
-      min-height: 100%;
-      position: relative;
-      background: #08090e;
-      /* PC তে shadow দিয়ে phone এর মতো দেখাবে */
-      box-shadow: 0 0 60px rgba(0, 212, 232, 0.06);
-    }
-
-    /* PC তে background একটু আলাদা দেখাবে */
-    @media (min-width: 520px) {
-      body {
-        background: #04050a;
-      }
-      #root {
-        border-left: 1px solid #1e2330;
-        border-right: 1px solid #1e2330;
-      }
-    }
-
-    /* Scrollbar */
-    ::-webkit-scrollbar { width: 2px; }
-    ::-webkit-scrollbar-track { background: #08090e; }
-    ::-webkit-scrollbar-thumb { background: #1e2330; border-radius: 2px; }
-
-    /* Loading fallback */
-    #loading {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      gap: 12px;
-      color: #00d4e8;
-      font-family: 'JetBrains Mono', monospace;
-    }
-    #loading .icon { font-size: 32px; }
-    #loading .text { font-size: 10px; letter-spacing: 4px; color: #64748b; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; background: #08090e; color: #e2e8f0; font-family: 'JetBrains Mono', monospace; display: flex; justify-content: center; }
+    #root { width: 100%; max-width: 480px; min-height: 100%; position: relative; background: #08090e; box-shadow: 0 0 60px rgba(0, 212, 232, 0.06); }
+    @media (min-width: 520px) { body { background: #04050a; } #root { border-left: 1px solid #1e2330; border-right: 1px solid #1e2330; } }
+    ::-webkit-scrollbar { width: 2px; } ::-webkit-scrollbar-track { background: #08090e; } ::-webkit-scrollbar-thumb { background: #1e2330; border-radius: 2px; }
+    #loading { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; gap: 12px; color: #00d4e8; font-family: 'JetBrains Mono', monospace; }
+    #loading .icon { font-size: 32px; } #loading .text { font-size: 10px; letter-spacing: 4px; color: #64748b; }
   </style>
 </head>
 <body>
-  <div id="root">
-    <!-- Loading state যতক্ষণ JS load হয় -->
-    <div id="loading">
-      <div class="icon">◉</div>
-      <div class="text">LOADING</div>
-    </div>
-  </div>
+  <div id="root"><div id="loading"><div class="icon">◉</div><div class="text">LOADING</div></div></div>
 
-  <script type="text/babel" data-presets="react" src="/app.jsx" data-type="module"></script>
+  <!-- ✅ app.jsx লোড করছে — কিন্তু Babel এর src দিয়ে নয় -->
+  <script type="text/babel">
+    // app.jsx ফাইলের কন্টেন্ট এখানে fetch করে আনছি
+    fetch('/app.jsx')
+      .then(res => res.text())
+      .then(code => {
+        // Babel দিয়ে কোড ট্রান্সফর্ম করো
+        const transformed = Babel.transform(code, {
+          presets: ['react'],
+          filename: 'app.jsx'
+        }).code;
 
-  <script>
-    // JS load হলে loading div সরিয়ে দাও
-    window.addEventListener('load', function() {
-      setTimeout(function() {
-        const loading = document.getElementById('loading');
-        if (loading && document.querySelector('#root > div:not(#loading)')) {
-          loading.style.display = 'none';
-        }
-      }, 500);
-    });
+        // ট্রান্সফর্ম করা কোড রান করো
+        eval(transformed);
+      })
+      .catch(err => {
+        document.getElementById('root').innerHTML = `
+          <div style="padding:40px;text-align:center;color:#ef4444;font-size:12px;line-height:2;">
+            ⚠️ app.jsx লোড করা যায়নি<br/>
+            <span style="color:#64748b;font-size:10px;">${err.message}</span>
+          </div>
+        `;
+        console.error(err);
+      });
   </script>
 </body>
-</html>
+  </html>
