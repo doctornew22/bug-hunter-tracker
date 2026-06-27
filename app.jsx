@@ -1000,3 +1000,6 @@ const inp={background:C.card,border:`1px solid ${C.border}`,color:C.text,borderR
 // ═══════════════════════════════════════════
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(React.createElement(App));
+window.onerror = function(msg, src, line) {
+  document.body.innerHTML = '<div style="color:red;padding:20px;font-size:14px">' + msg + '<br>' + src + ':' + line + '</div>';
+};
