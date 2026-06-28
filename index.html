@@ -3,107 +3,106 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#08090e" />
+  <meta name="theme-color" content="#0d1117" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="BH Tracker" />
   <title>Bug Hunter Tracker</title>
   <link rel="manifest" href="/manifest.json" />
-
-  <!-- Fonts -->
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-
-  <!-- React -->
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-
-  <!-- Babel for JSX -->
   <script src="https://unpkg.com/@babel/standalone@7.23.2/babel.min.js"></script>
-
-  <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
   <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      -webkit-tap-highlight-color: transparent;
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --card:     #1c2128;
+      --border:   #30363d;
+      --line:     #21262d;
+      --cyan:     #38bdf8;
+      --green:    #34d399;
+      --red:      #f87171;
+      --orange:   #fb923c;
+      --purple:   #a78bfa;
+      --text:     #e6edf3;
+      --sub:      #7d8590;
+      --font:     'JetBrains Mono', 'Fira Code', monospace;
     }
 
-    html, body {
-      height: 100%;
-      background: #08090e;
-      color: #e2e8f0;
-      font-family: 'JetBrains Mono', monospace;
-      /* PC তে max width center করা */
+    html { height: 100%; }
+
+    body {
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
       display: flex;
       justify-content: center;
+      /* subtle warm gradient so it's not pure black */
+      background-image: radial-gradient(ellipse at 60% 0%, #1a2233 0%, var(--bg) 60%);
+      background-attachment: fixed;
     }
 
     #root {
       width: 100%;
-      max-width: 480px;  /* PC তে phone size এ থাকবে */
-      min-height: 100%;
+      min-height: 100vh;
       position: relative;
-      background: #08090e;
-      /* PC তে shadow দিয়ে phone এর মতো দেখাবে */
-      box-shadow: 0 0 60px rgba(0, 212, 232, 0.06);
+      background: transparent;
     }
 
-    /* PC তে background একটু আলাদা দেখাবে */
-    @media (min-width: 520px) {
-      body {
-        background: #04050a;
-      }
+    /* PC: phone-like centered column */
+    @media (min-width: 540px) {
+      body { background: #080c12; }
       #root {
-        border-left: 1px solid #1e2330;
-        border-right: 1px solid #1e2330;
+        max-width: 480px;
+        background: var(--bg);
+        background-image: radial-gradient(ellipse at 60% 0%, #1a2233 0%, var(--bg) 60%);
+        border-left:  1px solid var(--border);
+        border-right: 1px solid var(--border);
+        box-shadow: 0 0 80px rgba(56,189,248,0.06), 0 0 0 1px rgba(56,189,248,0.04);
       }
     }
 
-    /* Scrollbar */
-    ::-webkit-scrollbar { width: 2px; }
-    ::-webkit-scrollbar-track { background: #08090e; }
-    ::-webkit-scrollbar-thumb { background: #1e2330; border-radius: 2px; }
+    ::-webkit-scrollbar { width: 3px; height: 3px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-    /* Loading fallback */
-    #loading {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      gap: 12px;
-      color: #00d4e8;
-      font-family: 'JetBrains Mono', monospace;
+    input, textarea, select {
+      font-family: var(--font);
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 13px;
+      font-size: 12px;
+      width: 100%;
+      outline: none;
+      line-height: 1.5;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
-    #loading .icon { font-size: 32px; }
-    #loading .text { font-size: 10px; letter-spacing: 4px; color: #64748b; }
+    input:focus, textarea:focus, select:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 3px rgba(56,189,248,0.1);
+    }
+    select option { background: var(--card); }
+
+    @keyframes up   { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes blink{ 0%,100%{opacity:1} 50%{opacity:.35} }
+    @keyframes glow { 0%,100%{box-shadow:0 0 8px rgba(56,189,248,.2)} 50%{box-shadow:0 0 20px rgba(56,189,248,.45)} }
+
+    .tap { transition: opacity .1s, transform .1s; }
+    .tap:active { opacity: .7; transform: scale(.98); }
+    .row { transition: background .12s; }
+    .row:active { background: var(--card) !important; }
   </style>
 </head>
 <body>
-  <div id="root">
-    <!-- Loading state যতক্ষণ JS load হয় -->
-    <div id="loading">
-      <div class="icon">◉</div>
-      <div class="text">LOADING</div>
-    </div>
-  </div>
-
+  <div id="root"></div>
   <script type="text/babel" src="/app.jsx"></script>
-
-  <script>
-    // JS load হলে loading div সরিয়ে দাও
-    window.addEventListener('load', function() {
-      setTimeout(function() {
-        const loading = document.getElementById('loading');
-        if (loading && document.querySelector('#root > div:not(#loading)')) {
-          loading.style.display = 'none';
-        }
-      }, 500);
-    });
-  </script>
 </body>
-</html>
+  </html>
