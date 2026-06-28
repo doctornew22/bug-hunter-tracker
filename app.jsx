@@ -403,8 +403,12 @@ function Planner({ctx}){
   const [saving,setSaving]=React.useState(false);
   const tasks=ctx.plan[sel]||[];
   const totalH=tasks.reduce((a,t)=>a+t.hours,0);
+  const isPast=sel<td;   // আগের দিন — read only
+  const isFuture=sel>td; // পরের দিন — editable
+  const isEditable=sel>=td; // আজ বা পরের দিন
 
   const add=async()=>{
+    if(!isEditable) return ctx.flash("Past দিনে task add করা যাবে না","err");
     if(!text.trim()) return ctx.flash("Task লিখো","err");
     setSaving(true);
     await ctx.addTask(sel,text.trim(),parseFloat(hours)||1);
@@ -423,19 +427,24 @@ function Planner({ctx}){
         );
       })
     ),
-    React.createElement("div",{style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"16px",marginBottom:14,boxShadow:"0 2px 12px rgba(0,0,0,.3)"}},
-      React.createElement("div",{style:{fontSize:9,color:C.sub,letterSpacing:2,marginBottom:12}},`${dayOf(sel).toUpperCase()} ${fmt(sel)} — NEW TASK`),
-      React.createElement("input",{value:text,onChange:e=>setText(e.target.value),onKeyDown:e=>e.key==="Enter"&&add(),placeholder:"Task লিখো…",style:{...inp,marginBottom:10}}),
-      React.createElement("div",{style:{display:"flex",gap:8}},
-        React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6,flexShrink:0}},
-          React.createElement("span",{style:{fontSize:10,color:C.sub}},"h:"),
-          React.createElement("input",{type:"number",min:"0.5",max:"12",step:"0.5",value:hours,onChange:e=>setHours(e.target.value),style:{...inp,width:60}})
+    isPast
+      ? React.createElement("div",{style:{background:`${C.orange}0a`,border:`1px solid ${C.orange}33`,borderLeft:`3px solid ${C.orange}`,borderRadius:10,padding:"12px 16px",marginBottom:14}},
+          React.createElement("div",{style:{fontSize:11,color:C.orange,fontWeight:600}},"📅 Past day — Read only"),
+          React.createElement("div",{style:{fontSize:10,color:C.sub,marginTop:3}},"শুধু দেখতে পারবে, edit বা add করা যাবে না।")
+        )
+      : React.createElement("div",{style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"16px",marginBottom:14,boxShadow:"0 2px 12px rgba(0,0,0,.3)"}},
+          React.createElement("div",{style:{fontSize:9,color:C.sub,letterSpacing:2,marginBottom:12}},`${dayOf(sel).toUpperCase()} ${fmt(sel)} — NEW TASK`),
+          React.createElement("input",{value:text,onChange:e=>setText(e.target.value),onKeyDown:e=>e.key==="Enter"&&add(),placeholder:"Task লিখো…",style:{...inp,marginBottom:10}}),
+          React.createElement("div",{style:{display:"flex",gap:8}},
+            React.createElement("div",{style:{display:"flex",alignItems:"center",gap:6,flexShrink:0}},
+              React.createElement("span",{style:{fontSize:10,color:C.sub}},"h:"),
+              React.createElement("input",{type:"number",min:"0.5",max:"12",step:"0.5",value:hours,onChange:e=>setHours(e.target.value),style:{...inp,width:60}})
+            ),
+            React.createElement("button",{onClick:add,disabled:saving,style:{flex:1,background:`${C.cyan}14`,border:`1px solid ${C.cyan}55`,color:C.cyan,borderRadius:8,padding:"10px",fontSize:11,cursor:"pointer",fontFamily:F,fontWeight:600,opacity:saving?.6:1}},saving?"...":"+ Add"),
+            React.createElement("button",{onClick:()=>setShowSug(s=>!s),style:{background:showSug?`${C.orange}14`:C.card,border:`1px solid ${showSug?C.orange:C.border}`,color:showSug?C.orange:C.sub,borderRadius:8,padding:"10px 14px",fontSize:11,cursor:"pointer",fontFamily:F,transition:"all .15s"}},showSug?"✕":"Suggest")
+          )
         ),
-        React.createElement("button",{onClick:add,disabled:saving,style:{flex:1,background:`${C.cyan}14`,border:`1px solid ${C.cyan}55`,color:C.cyan,borderRadius:8,padding:"10px",fontSize:11,cursor:"pointer",fontFamily:F,fontWeight:600,opacity:saving?.6:1}},saving?"...":"+ Add"),
-        React.createElement("button",{onClick:()=>setShowSug(s=>!s),style:{background:showSug?`${C.orange}14`:C.card,border:`1px solid ${showSug?C.orange:C.border}`,color:showSug?C.orange:C.sub,borderRadius:8,padding:"10px 14px",fontSize:11,cursor:"pointer",fontFamily:F,transition:"all .15s"}},showSug?"✕":"Suggest")
-      )
-    ),
-    showSug&&React.createElement("div",{style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"14px",marginBottom:14}},
+    !isPast&&showSug&&React.createElement("div",{style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"14px",marginBottom:14}},
       React.createElement("div",{style:{fontSize:9,color:C.sub,letterSpacing:2,marginBottom:10}},`PHASE ${ctx.ph.n} — SUGGESTED`),
       ctx.ph.tasks.map((t,i)=>React.createElement("div",{key:i,className:"row tap",onClick:async()=>{await ctx.addTask(sel,t,1);setShowSug(false);},
         style:{fontSize:11,color:C.sub,padding:"9px 0",borderBottom:`1px solid ${C.line}`,cursor:"pointer",display:"flex",gap:8,lineHeight:1.6}},
@@ -451,7 +460,7 @@ function Planner({ctx}){
                 React.createElement("div",{style:{fontSize:12,color:C.text,lineHeight:1.5}},t.text),
                 React.createElement("div",{style:{fontSize:10,color:C.sub,marginTop:2}},`${t.hours}h`)
               ),
-              React.createElement("button",{onClick:()=>ctx.deleteTask(sel,t.id),style:{background:"none",border:"none",color:C.sub,cursor:"pointer",fontSize:15,padding:"0 6px",lineHeight:1,transition:"color .15s"}},"✕")
+              !isPast&&React.createElement("button",{onClick:()=>ctx.deleteTask(sel,t.id),style:{background:"none",border:"none",color:C.sub,cursor:"pointer",fontSize:15,padding:"0 6px",lineHeight:1,transition:"color .15s"}},"✕")
             )),
             React.createElement("div",{style:{paddingTop:10,display:"flex",justifyContent:"space-between",fontSize:10}},
               React.createElement("span",{style:{color:C.sub}},`Total ${totalH}h`),
