@@ -109,7 +109,7 @@ function App() {
 
       const wfrom=shift(tod(),-60);
       const {data:wups} = await db.from("writeups").select("*").eq("user_id",uid).gte("date",wfrom).order("created_at",{ascending:false});
-      if(wups) setWriteups(wups.map(w=>({id:w.id,date:w.date,title:w.title,platform:w.platform,url:w.url,notes:w.notes})));
+      if(wups) setWriteups(wups.map(w=>({id:w.id,date:w.date,title:w.title,platform:w.platform,url:w.url,notes:w.notes,pinned:w.pinned||false})));
 
       const {data:fols} = await db.from("folders").select("*").eq("user_id",uid).order("created_at",{ascending:false});
       if(fols) setFolders(fols.map(f=>({id:f.id,name:f.name,type:f.type,pinned:f.pinned})));
@@ -139,8 +139,8 @@ function App() {
   const savePhase  = async(p) => { setPhase(p); await db.from("user_settings").upsert({user_id:uid(),phase:p}); };
 
   const addWriteup    = async(wu) => {
-    const {data}=await db.from("writeups").insert({user_id:uid(),...wu}).select().single();
-    if(data){ setWriteups(p=>[{id:data.id,...wu},...p]); flash(writeups.filter(w=>w.date===tod()).length>=1?"🔥 Quota done!":"Saved! 1 more to go."); }
+    const {data}=await db.from("writeups").insert({user_id:uid(),...wu,pinned:false}).select().single();
+    if(data){ setWriteups(p=>[{id:data.id,...wu,pinned:false},...p]); flash(writeups.filter(w=>w.date===tod()).length>=1?"🔥 Quota done!":"Saved! 1 more to go."); }
   };
   const deleteWriteup = async(id) => { await db.from("writeups").delete().eq("id",id); setWriteups(p=>p.filter(w=>w.id!==id)); flash("Deleted"); };
   const updateWriteup = async(id,fields) => {
@@ -456,13 +456,32 @@ function Planner({ctx}){
         ? React.createElement(Empty,{msg:"এই দিনে কোনো task নেই।"})
         : React.createElement(React.Fragment,null,
             tasks.map(t=>React.createElement("div",{key:t.id,style:{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:`1px solid ${C.line}`}},
+              // Status dot for past days
+              isPast && React.createElement("div",{style:{width:8,height:8,borderRadius:"50%",flexShrink:0,
+                background:t.done?C.green:t.missed?C.red:C.sub,
+                boxShadow:t.done?`0 0 6px ${C.green}`:t.missed?`0 0 6px ${C.red}`:"none"
+              }}),
               React.createElement("div",{style:{flex:1}},
-                React.createElement("div",{style:{fontSize:12,color:C.text,lineHeight:1.5}},t.text),
-                React.createElement("div",{style:{fontSize:10,color:C.sub,marginTop:2}},`${t.hours}h`)
+                React.createElement("div",{style:{fontSize:12,lineHeight:1.5,
+                  color:t.done?C.sub:t.missed?C.red:C.text,
+                  textDecoration:t.done?"line-through":"none"
+                }},t.text),
+                React.createElement("div",{style:{display:"flex",gap:8,marginTop:2,alignItems:"center"}},
+                  React.createElement("span",{style:{fontSize:10,color:C.sub}},`${t.hours}h`),
+                  isPast && t.done && React.createElement("span",{style:{fontSize:9,color:C.green}},"✓ done"),
+                  isPast && t.missed && React.createElement("span",{style:{fontSize:9,color:C.red}},"✕ missed"),
+                  isPast && !t.done && !t.missed && React.createElement("span",{style:{fontSize:9,color:C.sub}},"— not logged")
+                )
               ),
               !isPast&&React.createElement("button",{onClick:()=>ctx.deleteTask(sel,t.id),style:{background:"none",border:"none",color:C.sub,cursor:"pointer",fontSize:15,padding:"0 6px",lineHeight:1,transition:"color .15s"}},"✕")
             )),
-            React.createElement("div",{style:{paddingTop:10,display:"flex",justifyContent:"space-between",fontSize:10}},
+            // Past day summary
+            isPast && React.createElement("div",{style:{marginTop:12,padding:"10px 12px",background:C.card,borderRadius:8,display:"flex",gap:16,flexWrap:"wrap"}},
+              React.createElement("span",{style:{fontSize:10,color:C.green}},`✓ ${tasks.filter(t=>t.done).length} done`),
+              React.createElement("span",{style:{fontSize:10,color:C.red}},`✕ ${tasks.filter(t=>t.missed).length} missed`),
+              React.createElement("span",{style:{fontSize:10,color:C.sub}},`— ${tasks.filter(t=>!t.done&&!t.missed).length} not logged`)
+            ),
+            !isPast && React.createElement("div",{style:{paddingTop:10,display:"flex",justifyContent:"space-between",fontSize:10}},
               React.createElement("span",{style:{color:C.sub}},`Total ${totalH}h`),
               React.createElement("span",{style:{color:totalH>=6?C.green:C.orange,fontWeight:600}},totalH>=6?"✓ 6h met":`${(6-totalH).toFixed(1)}h more needed`)
             )
@@ -540,7 +559,8 @@ function Writeups({ctx}){
   const PLATS=["HackerOne","Bugcrowd","Intigriti","Synack","Other"];
   const td=tod(), tdCnt=ctx.todayWU.length, days=week7();
   const streak=(()=>{let s=0,d=new Date();for(let i=0;i<60;i++){const k=d.toISOString().split("T")[0];if(ctx.writeups.filter(w=>w.date===k).length>=2){s++;d.setDate(d.getDate()-1);}else break;}return s;})();
-  const filtered=ctx.writeups.filter(w=>(filter==="all"||w.platform===filter)&&(!search||(w.title+(w.notes||"")+w.platform).toLowerCase().includes(search.toLowerCase())));
+  const allFiltered=ctx.writeups.filter(w=>(filter==="all"||w.platform===filter)&&(!search||(w.title+(w.notes||"")+w.platform).toLowerCase().includes(search.toLowerCase())));
+  const filtered=[...allFiltered.filter(w=>w.pinned),...allFiltered.filter(w=>!w.pinned)];
   const pc={HackerOne:C.red,Bugcrowd:C.orange,Intigriti:C.purple,Synack:C.green};
   const add=async()=>{
     if(!form.title.trim()) return ctx.flash("Title লিখো","err");
@@ -612,7 +632,10 @@ function Writeups({ctx}){
             React.createElement("div",{onClick:()=>setExp(isExp?null:w.id),style:{display:"flex",gap:10,padding:"12px 14px",alignItems:"center",cursor:"pointer"}},
               React.createElement("div",{style:{width:3,height:34,borderRadius:2,flexShrink:0,background:col,boxShadow:`0 0 6px ${col}66`}}),
               React.createElement("div",{style:{flex:1,minWidth:0}},
-                React.createElement("div",{style:{fontSize:12,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},w.title),
+                React.createElement("div",{style:{display:"flex",alignItems:"center",gap:5}},
+                  w.pinned&&React.createElement("span",{style:{fontSize:10,color:C.orange,filter:`drop-shadow(0 0 4px ${C.orange})`}},"★"),
+                  React.createElement("span",{style:{fontSize:12,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},w.title)
+                ),
                 React.createElement("div",{style:{display:"flex",gap:8,marginTop:3,alignItems:"center"}},
                   React.createElement("span",{style:{fontSize:9,color:col,fontWeight:600}},w.platform),
                   React.createElement("span",{style:{fontSize:9,color:C.border}},"·"),
@@ -639,9 +662,13 @@ function Writeups({ctx}){
                 : React.createElement(React.Fragment,null,
                     w.url&&React.createElement("a",{href:w.url,target:"_blank",rel:"noreferrer",style:{display:"inline-block",marginTop:10,fontSize:11,color:C.cyan,textDecoration:"none"}},`↗ ${w.url.length>40?w.url.slice(0,40)+"…":w.url}`),
                     w.notes&&React.createElement("div",{style:{fontSize:11,color:C.sub,marginTop:10,lineHeight:1.8,whiteSpace:"pre-wrap",borderLeft:`2px solid ${C.border}`,paddingLeft:10}},w.notes),
-                    React.createElement("div",{style:{display:"flex",gap:8,marginTop:12}},
+                    React.createElement("div",{style:{display:"flex",gap:8,marginTop:12,flexWrap:"wrap"}},
+                      React.createElement("button",{
+                        onClick:()=>ctx.updateWriteup(w.id,{pinned:!w.pinned}),
+                        style:{background:w.pinned?`${C.orange}14`:"transparent",border:`1px solid ${w.pinned?C.orange:C.border}`,color:w.pinned?C.orange:C.sub,borderRadius:6,padding:"6px 12px",fontSize:10,cursor:"pointer",fontFamily:F,transition:"all .15s"}
+                      },w.pinned?"★ Pinned":"☆ Pin"),
                       React.createElement("button",{onClick:()=>{setEditWU(w.id);setEditForm({title:w.title,platform:w.platform,url:w.url||"",notes:w.notes||""});},style:{background:`${C.cyan}14`,border:`1px solid ${C.cyan}44`,color:C.cyan,borderRadius:6,padding:"6px 14px",fontSize:10,cursor:"pointer",fontFamily:F}},"✎ Edit"),
-                      React.createElement("button",{onClick:()=>ctx.deleteWriteup(w.id),style:{background:"transparent",border:`1px solid ${C.red}33`,color:C.red,borderRadius:6,padding:"6px 12px",fontSize:10,cursor:"pointer",fontFamily:F}},"✕ Delete")
+                      React.createElement("button",{onClick:()=>{if(window.confirm("এই write-up টা delete করবে? এটা undo করা যাবে না।")) ctx.deleteWriteup(w.id);},style:{background:"transparent",border:`1px solid ${C.red}33`,color:C.red,borderRadius:6,padding:"6px 12px",fontSize:10,cursor:"pointer",fontFamily:F}},"✕ Delete")
                     )
                   )
             )
