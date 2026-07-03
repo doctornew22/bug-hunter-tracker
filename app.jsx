@@ -768,7 +768,7 @@ function NotesScreen({ctx}){
               rest.map(n=>React.createElement(NoteRow,{key:n.id,n,color:ft.color,onClick:()=>{setSelNote(n);setView("note-view");}}))
             )
           ),
-      React.createElement("button",{onClick:async()=>{await ctx.deleteFolder(selFolder.id);setView("list");},style:{marginTop:20,background:"transparent",border:`1px solid ${C.red}33`,color:C.red,borderRadius:8,padding:"10px",fontSize:10,cursor:"pointer",fontFamily:F,width:"100%"}},"✕ Delete Folder")
+      React.createElement("button",{onClick:async()=>{if(window.confirm(`"${selFolder.name}" folder টা delete করবে? এর ভেতরের সব note ও মুছে যাবে!`)){await ctx.deleteFolder(selFolder.id);setView("list");}},style:{marginTop:20,background:"transparent",border:`1px solid ${C.red}33`,color:C.red,borderRadius:8,padding:"10px",fontSize:10,cursor:"pointer",fontFamily:F,width:"100%"}},"✕ Delete Folder")
     );
   }
 
@@ -791,7 +791,7 @@ function NotesScreen({ctx}){
       React.createElement("div",{style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"18px"}},
         React.createElement(NoteContent,{content:n.content})
       ),
-      React.createElement("button",{onClick:async()=>{await ctx.deleteNote(n.id);setView("folder");},style:{marginTop:14,background:"transparent",border:`1px solid ${C.red}33`,color:C.red,borderRadius:8,padding:"10px",fontSize:10,cursor:"pointer",fontFamily:F,width:"100%"}},"✕ Delete Note")
+      React.createElement("button",{onClick:async()=>{if(window.confirm(`"${n.title}" note টা delete করবে? এটা undo করা যাবে না।`)){await ctx.deleteNote(n.id);setView("folder");}},style:{marginTop:14,background:"transparent",border:`1px solid ${C.red}33`,color:C.red,borderRadius:8,padding:"10px",fontSize:10,cursor:"pointer",fontFamily:F,width:"100%"}},"✕ Delete Note")
     );
   }
 
