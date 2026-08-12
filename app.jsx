@@ -112,7 +112,7 @@ function App() {
       if(wups) setWriteups(wups.map(w=>({id:w.id,date:w.date,title:w.title,platform:w.platform,url:w.url,notes:w.notes,pinned:w.pinned||false})));
 
       const {data:fols} = await db.from("folders").select("*").eq("user_id",uid).order("created_at",{ascending:false});
-      if(fols) setFolders(fols.map(f=>({id:f.id,name:f.name,type:f.type,pinned:f.pinned})));
+      if(fols) setFolders(fols.map(f=>({id:f.id,name:f.name,type:f.type,pinned:f.pinned,parentId:f.parent_id||null})));
 
       const {data:nts} = await db.from("notes").select("*").eq("user_id",uid).order("updated_at",{ascending:false});
       if(nts) setNotes(nts.map(n=>({id:n.id,folderId:n.folder_id,title:n.title,content:n.content,tags:n.tags||[],pinned:n.pinned,updatedAt:n.updated_at?.split("T")[0]})));
@@ -148,13 +148,23 @@ function App() {
     setWriteups(p=>p.map(w=>w.id===id?{...w,...fields}:w)); flash("Updated ✓");
   };
 
-  const addFolder    = async(name,type) => {
-    const {data}=await db.from("folders").insert({user_id:uid(),name,type,pinned:false}).select().single();
-    if(data){ setFolders(p=>[{id:data.id,name,type,pinned:false},...p]); flash("Folder created"); }
+  const addFolder    = async(name,type,parentId=null) => {
+    const {data}=await db.from("folders").insert({user_id:uid(),name,type,parent_id:parentId,pinned:false}).select().single();
+    if(data){ setFolders(p=>[{id:data.id,name,type,pinned:false,parentId},...p]); flash(parentId?"Subfolder created":"Folder created"); return data; }
+    return null;
+  };
+  const collectDescendantIds = (id,list) => {
+    const out=[id];
+    const walk=(pid)=>{ list.filter(f=>f.parentId===pid).forEach(f=>{ out.push(f.id); walk(f.id); }); };
+    walk(id);
+    return out;
   };
   const deleteFolder = async(id) => {
-    await db.from("folders").delete().eq("id",id);
-    setFolders(p=>p.filter(f=>f.id!==id)); setNotes(p=>p.filter(n=>n.folderId!==id)); flash("Deleted");
+    const ids = collectDescendantIds(id,folders);
+    await db.from("folders").delete().eq("id",id); // parent_id has ON DELETE CASCADE, so children are removed too
+    setFolders(p=>p.filter(f=>!ids.includes(f.id)));
+    setNotes(p=>p.filter(n=>!ids.includes(n.folderId)));
+    flash("Deleted");
   };
 
   const addNote    = async(folderId,title,content,tags) => {
@@ -682,11 +692,30 @@ function Writeups({ctx}){
 // ═══════════════════════════════════════════
 function NotesScreen({ctx}){
   const [view,setView]=React.useState("list");
-  const [selFolder,setSelFolder]=React.useState(null);
+  const [folderPath,setFolderPath]=React.useState([]); // root → … → current folder
   const [selNote,setSelNote]=React.useState(null);
   const [search,setSearch]=React.useState("");
+  const [newFolderParent,setNewFolderParent]=React.useState(null); // folder obj, or null = top-level
+  const current=folderPath.length?folderPath[folderPath.length-1]:null;
   const folderNotes=(fid)=>ctx.notes.filter(n=>n.folderId===fid);
+  const subfolders=(fid)=>ctx.folders.filter(f=>f.parentId===fid);
   const searchResults=search.trim()?ctx.notes.filter(n=>(n.title+n.content+(n.tags||[]).join(" ")).toLowerCase().includes(search.toLowerCase())):[];
+
+  const openFolder=(f)=>{ setFolderPath(p=>[...p,f]); setView("folder"); };
+  const goToDepth=(i)=>{ if(i<0){ setFolderPath([]); setView("list"); } else { setFolderPath(p=>p.slice(0,i+1)); setView("folder"); } };
+  const goToFolder=(f)=>{
+    const path=[]; let cur=f;
+    while(cur){ path.unshift(cur); cur=cur.parentId?ctx.folders.find(x=>x.id===cur.parentId):null; }
+    setFolderPath(path); setView("folder");
+  };
+
+  const Breadcrumb=()=>folderPath.length===0?null:React.createElement("div",{style:{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap",marginBottom:14,fontSize:10}},
+    React.createElement("span",{onClick:()=>goToDepth(-1),style:{cursor:"pointer",color:C.sub}},"Home"),
+    folderPath.map((f,i)=>React.createElement(React.Fragment,{key:f.id},
+      React.createElement("span",{style:{color:C.border}},"/"),
+      React.createElement("span",{onClick:()=>goToDepth(i),style:{cursor:"pointer",color:i===folderPath.length-1?C.cyan:C.sub,fontWeight:i===folderPath.length-1?600:400}},f.name)
+    ))
+  );
 
   if(view==="list") return React.createElement("div",{style:{animation:"up .2s ease"}},
     React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:18}},
@@ -694,7 +723,7 @@ function NotesScreen({ctx}){
         React.createElement("div",{style:{fontSize:14,fontWeight:700,color:C.text}},"Bug Notes"),
         React.createElement("div",{style:{fontSize:10,color:C.sub,marginTop:2}},`${ctx.folders.length} folders · ${ctx.notes.length} notes`)
       ),
-      React.createElement("button",{onClick:()=>setView("new-folder"),style:{background:`${C.cyan}14`,border:`1px solid ${C.cyan}44`,color:C.cyan,borderRadius:8,padding:"7px 14px",fontSize:10,cursor:"pointer",fontFamily:F,letterSpacing:1}},"+ Folder")
+      React.createElement("button",{onClick:()=>{setNewFolderParent(null);setView("new-folder");},style:{background:`${C.cyan}14`,border:`1px solid ${C.cyan}44`,color:C.cyan,borderRadius:8,padding:"7px 14px",fontSize:10,cursor:"pointer",fontFamily:F,letterSpacing:1}},"+ Folder")
     ),
     React.createElement("div",{style:{position:"relative",marginBottom:16}},
       React.createElement("span",{style:{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:C.sub,fontSize:14,pointerEvents:"none"}},"⌕"),
@@ -708,7 +737,7 @@ function NotesScreen({ctx}){
             : searchResults.map(n=>{
                 const f=ctx.folders.find(x=>x.id===n.folderId);
                 const ft=FTYPES.find(t=>t.id===f?.type)||FTYPES[0];
-                return React.createElement("div",{key:n.id,className:"row tap",onClick:()=>{setSelNote(n);setSelFolder(f);setView("note-view");},style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",marginBottom:7,cursor:"pointer"}},
+                return React.createElement("div",{key:n.id,className:"row tap",onClick:()=>{setSelNote(n);if(f)goToFolder(f);setView("note-view");setSearch("");},style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",marginBottom:7,cursor:"pointer"}},
                   React.createElement("div",{style:{fontSize:10,color:ft.color,marginBottom:4}},`${ft.icon} ${f?.name}`),
                   React.createElement("div",{style:{fontSize:12,fontWeight:600,color:C.text}},n.title),
                   n.content&&React.createElement("div",{style:{fontSize:10,color:C.sub,marginTop:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},n.content.slice(0,60)+"…")
@@ -717,70 +746,89 @@ function NotesScreen({ctx}){
         )
       : React.createElement(React.Fragment,null,
           FTYPES.map(ft=>{
-            const flist=ctx.folders.filter(f=>f.type===ft.id);
+            const flist=ctx.folders.filter(f=>f.type===ft.id&&!f.parentId);
             if(!flist.length) return null;
             return React.createElement("div",{key:ft.id,style:{marginBottom:20}},
               React.createElement("div",{style:{fontSize:9,color:C.sub,letterSpacing:2,marginBottom:10}},`${ft.label.toUpperCase()}S`),
               flist.map(f=>{
-                const cnt=folderNotes(f.id).length;
-                return React.createElement("div",{key:f.id,className:"row tap",onClick:()=>{setSelFolder(f);setView("folder");},style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"13px 14px",marginBottom:7,cursor:"pointer",display:"flex",alignItems:"center",gap:13}},
+                const cnt=folderNotes(f.id).length, subCnt=subfolders(f.id).length;
+                return React.createElement("div",{key:f.id,className:"row tap",onClick:()=>openFolder(f),style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"13px 14px",marginBottom:7,cursor:"pointer",display:"flex",alignItems:"center",gap:13}},
                   React.createElement("div",{style:{width:36,height:36,borderRadius:9,background:`${ft.color}14`,border:`1px solid ${ft.color}33`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,color:ft.color,flexShrink:0}},ft.icon),
                   React.createElement("div",{style:{flex:1,minWidth:0}},
                     React.createElement("div",{style:{fontSize:12,fontWeight:600,color:C.text}},f.name),
-                    React.createElement("div",{style:{fontSize:9,color:C.sub,marginTop:3}},`${cnt} notes · ${ft.label}`)
+                    React.createElement("div",{style:{fontSize:9,color:C.sub,marginTop:3}},`${subCnt>0?`${subCnt} folders · `:""}${cnt} notes · ${ft.label}`)
                   ),
                   React.createElement("span",{style:{color:C.sub,fontSize:14}},"›")
                 );
               })
             );
           }),
-          ctx.folders.length===0&&React.createElement(Empty,{msg:"No folders yet.",cta:"Create folder",onCta:()=>setView("new-folder")})
+          ctx.folders.filter(f=>!f.parentId).length===0&&React.createElement(Empty,{msg:"No folders yet.",cta:"Create folder",onCta:()=>{setNewFolderParent(null);setView("new-folder");}})
         )
   );
 
-  if(view==="new-folder") return React.createElement(NewFolderView,{onBack:()=>setView("list"),onSave:async(name,type)=>{await ctx.addFolder(name,type);setView("list");}});
+  if(view==="new-folder") return React.createElement(NewFolderView,{
+    onBack:()=>setView(newFolderParent?"folder":"list"),
+    parentLabel:newFolderParent?newFolderParent.name:null,
+    lockType:newFolderParent?newFolderParent.type:null,
+    onSave:async(name,type)=>{ await ctx.addFolder(name,type,newFolderParent?newFolderParent.id:null); setView(newFolderParent?"folder":"list"); }
+  });
 
-  if(view==="folder"&&selFolder){
-    const ft=FTYPES.find(t=>t.id===selFolder.type)||FTYPES[0];
-    const fnotes=folderNotes(selFolder.id);
+  if(view==="folder"&&current){
+    const ft=FTYPES.find(t=>t.id===current.type)||FTYPES[0];
+    const subs=subfolders(current.id);
+    const fnotes=folderNotes(current.id);
     const pinned=fnotes.filter(n=>n.pinned), rest=fnotes.filter(n=>!n.pinned);
     return React.createElement("div",{style:{animation:"up .2s ease"}},
+      React.createElement(Breadcrumb),
       React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:18}},
-        React.createElement("button",{onClick:()=>setView("list"),style:{background:"none",border:"none",color:C.sub,cursor:"pointer",fontSize:22,padding:"0 4px",lineHeight:1}},"‹"),
+        React.createElement("button",{onClick:()=>goToDepth(folderPath.length-2),style:{background:"none",border:"none",color:C.sub,cursor:"pointer",fontSize:22,padding:"0 4px",lineHeight:1}},"‹"),
         React.createElement("div",{style:{flex:1,minWidth:0}},
           React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8}},
             React.createElement("span",{style:{color:ft.color,fontSize:15}},ft.icon),
-            React.createElement("span",{style:{fontSize:14,fontWeight:700,color:C.text}},selFolder.name)
+            React.createElement("span",{style:{fontSize:14,fontWeight:700,color:C.text}},current.name)
           ),
-          React.createElement("div",{style:{fontSize:9,color:C.sub,marginTop:2}},`${fnotes.length} notes · ${ft.label}`)
+          React.createElement("div",{style:{fontSize:9,color:C.sub,marginTop:2}},`${subs.length} folders · ${fnotes.length} notes`)
         ),
-        React.createElement("button",{onClick:()=>{setSelNote(null);setView("note-edit");},style:{background:`${C.cyan}14`,border:`1px solid ${C.cyan}44`,color:C.cyan,borderRadius:8,padding:"7px 14px",fontSize:10,cursor:"pointer",fontFamily:F}},"+ Note")
+        React.createElement("div",{style:{display:"flex",gap:6,flexShrink:0}},
+          React.createElement("button",{onClick:()=>{setNewFolderParent(current);setView("new-folder");},style:{background:`${C.orange}14`,border:`1px solid ${C.orange}44`,color:C.orange,borderRadius:8,padding:"7px 11px",fontSize:10,cursor:"pointer",fontFamily:F}},"+ Folder"),
+          React.createElement("button",{onClick:()=>{setSelNote(null);setView("note-edit");},style:{background:`${C.cyan}14`,border:`1px solid ${C.cyan}44`,color:C.cyan,borderRadius:8,padding:"7px 11px",fontSize:10,cursor:"pointer",fontFamily:F}},"+ Note")
+        )
       ),
-      fnotes.length===0
-        ? React.createElement(Empty,{msg:"No notes in this folder.",cta:"Write a note",onCta:()=>{setSelNote(null);setView("note-edit");}})
-        : React.createElement(React.Fragment,null,
-            pinned.length>0&&React.createElement(React.Fragment,null,
-              React.createElement("div",{style:{fontSize:9,color:C.sub,letterSpacing:2,marginBottom:8}},"PINNED"),
-              pinned.map(n=>React.createElement(NoteRow,{key:n.id,n,color:ft.color,onClick:()=>{setSelNote(n);setView("note-view");}}))
+      subs.length>0&&React.createElement("div",{style:{marginBottom:16}},
+        React.createElement("div",{style:{fontSize:9,color:C.sub,letterSpacing:2,marginBottom:8}},"SUBFOLDERS"),
+        subs.map(f=>{
+          const cnt=folderNotes(f.id).length, subCnt=subfolders(f.id).length;
+          return React.createElement("div",{key:f.id,className:"row tap",onClick:()=>openFolder(f),style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",marginBottom:7,cursor:"pointer",display:"flex",alignItems:"center",gap:12}},
+            React.createElement("span",{style:{fontSize:16,color:ft.color}},"▤"),
+            React.createElement("div",{style:{flex:1,minWidth:0}},
+              React.createElement("div",{style:{fontSize:12,fontWeight:600,color:C.text}},f.name),
+              React.createElement("div",{style:{fontSize:9,color:C.sub,marginTop:2}},`${subCnt>0?`${subCnt} folders · `:""}${cnt} notes`)
             ),
-            rest.length>0&&React.createElement(React.Fragment,null,
-              pinned.length>0&&React.createElement("div",{style:{fontSize:9,color:C.sub,letterSpacing:2,marginBottom:8,marginTop:16}},"ALL NOTES"),
-              rest.map(n=>React.createElement(NoteRow,{key:n.id,n,color:ft.color,onClick:()=>{setSelNote(n);setView("note-view");}}))
-            )
+            React.createElement("span",{style:{color:C.sub,fontSize:14}},"›")
+          );
+        })
+      ),
+      (fnotes.length===0&&subs.length===0)
+        ? React.createElement(Empty,{msg:"এই folder এ কিছু নেই।",cta:"Write a note",onCta:()=>{setSelNote(null);setView("note-edit");}})
+        : fnotes.length>0 && React.createElement(React.Fragment,null,
+            React.createElement("div",{style:{fontSize:9,color:C.sub,letterSpacing:2,marginBottom:8}},"NOTES"),
+            pinned.map(n=>React.createElement(NoteRow,{key:n.id,n,color:ft.color,onClick:()=>{setSelNote(n);setView("note-view");}})),
+            rest.map(n=>React.createElement(NoteRow,{key:n.id,n,color:ft.color,onClick:()=>{setSelNote(n);setView("note-view");}}))
           ),
-      React.createElement("button",{onClick:async()=>{if(window.confirm(`"${selFolder.name}" folder টা delete করবে? এর ভেতরের সব note ও মুছে যাবে!`)){await ctx.deleteFolder(selFolder.id);setView("list");}},style:{marginTop:20,background:"transparent",border:`1px solid ${C.red}33`,color:C.red,borderRadius:8,padding:"10px",fontSize:10,cursor:"pointer",fontFamily:F,width:"100%"}},"✕ Delete Folder")
+      React.createElement("button",{onClick:async()=>{if(window.confirm(`"${current.name}" folder টা delete করবে? এর ভেতরের সব subfolder ও note মুছে যাবে!`)){await ctx.deleteFolder(current.id);goToDepth(folderPath.length-2);}},style:{marginTop:20,background:"transparent",border:`1px solid ${C.red}33`,color:C.red,borderRadius:8,padding:"10px",fontSize:10,cursor:"pointer",fontFamily:F,width:"100%"}},"✕ Delete Folder")
     );
   }
 
   if(view==="note-view"&&selNote){
     const n=ctx.notes.find(x=>x.id===selNote.id)||selNote;
-    const ft=FTYPES.find(t=>t.id===selFolder?.type)||FTYPES[0];
+    const ft=FTYPES.find(t=>t.id===current?.type)||FTYPES[0];
     return React.createElement("div",{style:{animation:"up .2s ease"}},
       React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:16}},
         React.createElement("button",{onClick:()=>setView("folder"),style:{background:"none",border:"none",color:C.sub,cursor:"pointer",fontSize:22,padding:"0 4px",lineHeight:1}},"‹"),
         React.createElement("div",{style:{flex:1,minWidth:0}},
           React.createElement("div",{style:{fontSize:13,fontWeight:700,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},n.title),
-          React.createElement("div",{style:{fontSize:9,color:C.sub,marginTop:2}},`${n.updatedAt} · ${selFolder?.name}`)
+          React.createElement("div",{style:{fontSize:9,color:C.sub,marginTop:2}},`${n.updatedAt} · ${current?.name}`)
         ),
         React.createElement("button",{onClick:()=>ctx.updateNote(n.id,{pinned:!n.pinned}),style:{background:"transparent",border:`1px solid ${C.border}`,color:n.pinned?C.orange:C.sub,borderRadius:7,padding:"5px 10px",fontSize:13,cursor:"pointer",transition:"color .15s"}},n.pinned?"★":"☆"),
         React.createElement("button",{onClick:()=>{setSelNote(n);setView("note-edit");},style:{background:`${C.cyan}14`,border:`1px solid ${C.cyan}44`,color:C.cyan,borderRadius:7,padding:"5px 11px",fontSize:10,cursor:"pointer",fontFamily:F}},"Edit")
@@ -795,37 +843,42 @@ function NotesScreen({ctx}){
     );
   }
 
-  if(view==="note-edit") return React.createElement(NoteEditorView,{note:selNote,folder:selFolder,onBack:()=>setView(selNote?"note-view":"folder"),
+  if(view==="note-edit") return React.createElement(NoteEditorView,{note:selNote,folder:current,onBack:()=>setView(selNote?"note-view":"folder"),
     onSave:async(title,content,tags)=>{
       if(selNote){await ctx.updateNote(selNote.id,{title,content,tags});setView("note-view");}
-      else{const n=await ctx.addNote(selFolder.id,title,content,tags);if(n){setSelNote(n);setView("note-view");}}
+      else{const n=await ctx.addNote(current.id,title,content,tags);if(n){setSelNote(n);setView("note-view");}}
     }
   });
   return null;
 }
 
-function NewFolderView({onBack,onSave}){
+function NewFolderView({onBack,onSave,lockType,parentLabel}){
   const [name,setName]=React.useState("");
-  const [type,setType]=React.useState("target");
+  const [type,setType]=React.useState(lockType||"target");
   const [saving,setSaving]=React.useState(false);
   return React.createElement("div",{style:{animation:"up .2s ease"}},
     React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:20}},
       React.createElement("button",{onClick:onBack,style:{background:"none",border:"none",color:C.sub,cursor:"pointer",fontSize:22,padding:"0 4px",lineHeight:1}},"‹"),
-      React.createElement("div",{style:{fontSize:14,fontWeight:700,color:C.text}},"New Folder")
+      React.createElement("div",null,
+        React.createElement("div",{style:{fontSize:14,fontWeight:700,color:C.text}},"New Folder"),
+        parentLabel&&React.createElement("div",{style:{fontSize:9,color:C.sub,marginTop:2}},`Inside ${parentLabel}`)
+      )
     ),
     React.createElement("div",{style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"18px",marginBottom:14}},
-      React.createElement("div",{style:{fontSize:9,color:C.sub,letterSpacing:2,marginBottom:10}},"TYPE"),
-      React.createElement("div",{style:{display:"flex",gap:8,marginBottom:18}},
-        FTYPES.map(ft=>React.createElement("button",{key:ft.id,onClick:()=>setType(ft.id),className:"tap",style:{flex:1,background:type===ft.id?`${ft.color}14`:"transparent",border:`1px solid ${type===ft.id?`${ft.color}55`:C.border}`,color:type===ft.id?ft.color:C.sub,borderRadius:9,padding:"14px 8px",cursor:"pointer",fontFamily:F,display:"flex",flexDirection:"column",alignItems:"center",gap:7,transition:"all .15s"}},
-          React.createElement("span",{style:{fontSize:22}},ft.icon),
-          React.createElement("span",{style:{fontSize:9,letterSpacing:1}},ft.label.toUpperCase()),
-          React.createElement("span",{style:{fontSize:9,color:C.sub}},ft.hint)
-        ))
+      !lockType&&React.createElement(React.Fragment,null,
+        React.createElement("div",{style:{fontSize:9,color:C.sub,letterSpacing:2,marginBottom:10}},"TYPE"),
+        React.createElement("div",{style:{display:"flex",gap:8,marginBottom:18}},
+          FTYPES.map(ft=>React.createElement("button",{key:ft.id,onClick:()=>setType(ft.id),className:"tap",style:{flex:1,background:type===ft.id?`${ft.color}14`:"transparent",border:`1px solid ${type===ft.id?`${ft.color}55`:C.border}`,color:type===ft.id?ft.color:C.sub,borderRadius:9,padding:"14px 8px",cursor:"pointer",fontFamily:F,display:"flex",flexDirection:"column",alignItems:"center",gap:7,transition:"all .15s"}},
+            React.createElement("span",{style:{fontSize:22}},ft.icon),
+            React.createElement("span",{style:{fontSize:9,letterSpacing:1}},ft.label.toUpperCase()),
+            React.createElement("span",{style:{fontSize:9,color:C.sub}},ft.hint)
+          ))
+        )
       ),
       React.createElement("div",{style:{fontSize:9,color:C.sub,letterSpacing:2,marginBottom:8}},"NAME"),
       React.createElement("input",{placeholder:FTYPES.find(t=>t.id===type)?.hint||"Name…",style:inp,value:name,onChange:e=>setName(e.target.value),onKeyDown:async e=>{if(e.key==="Enter"&&name.trim()){setSaving(true);await onSave(name.trim(),type);}}})
     ),
-    React.createElement("button",{onClick:async()=>{if(!name.trim())return;setSaving(true);await onSave(name.trim(),type);},disabled:!name.trim()||saving,className:"tap",style:{width:"100%",background:name.trim()?`${C.cyan}14`:"transparent",border:`1px solid ${name.trim()?C.cyan:C.border}`,color:name.trim()?C.cyan:C.sub,borderRadius:10,padding:"13px",fontSize:11,fontWeight:700,cursor:name.trim()?"pointer":"default",fontFamily:F,letterSpacing:1,opacity:saving?.6:1,transition:"all .15s"}},saving?"Creating...":"CREATE FOLDER →")
+    React.createElement("button",{onClick:async()=>{if(!name.trim())return;setSaving(true);await onSave(name.trim(),type);},disabled:!name.trim()||saving,className:"tap",style:{width:"100%",background:name.trim()?`${C.cyan}14`:"transparent",border:`1px solid ${name.trim()?C.cyan:C.border}`,color:name.trim()?C.cyan:C.sub,borderRadius:10,padding:"13px",fontSize:11,fontWeight:700,cursor:name.trim()?"pointer":"default",fontFamily:F,letterSpacing:1,opacity:saving?.6:1,transition:"all .15s"}},saving?"Creating...":lockType?"CREATE SUBFOLDER →":"CREATE FOLDER →")
   );
 }
 
